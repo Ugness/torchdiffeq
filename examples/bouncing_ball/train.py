@@ -33,9 +33,11 @@ torch.set_default_dtype(torch.float64)
 
 class BouncingBall(Dataset):
 
-    def __init__(self, root='train.npy'):
+    def __init__(self, root='train.npy', seq_len=25, subseq=True):
         super().__init__()
         self.data = np.load(root)
+        self.subseq = subseq
+        self.seq_len = seq_len
 
     def __getitem__(self, item):
         # Parse 25-length subsequence.
@@ -44,8 +46,11 @@ class BouncingBall(Dataset):
         velocity = pos[1:] - pos[:-1]
         velocity = np.concatenate([np.zeros([1, 4]), velocity], 0)
 
-        start = random.randint(0, 74)
-        end = start+25
+        if self.subseq:
+            start = random.randint(0, 74)
+        else:
+            start = 0
+        end = start+self.seq_len
         state = np.concatenate([pos, velocity], -1)
         return state[start:end] # --> [25, 8]
 
@@ -54,12 +59,12 @@ class BouncingBall(Dataset):
 
 class DynsSolver(nn.Module):
 
-    def __init__(self, layer_norm=False, adjoint=True):
+    def __init__(self, dt=1./30., seq_len=25, layer_norm=False, adjoint=True):
         super().__init__()
-        self.dt = 1./30.
         self.event_fn = EventFn(hidden_dim=128, layer_norm=layer_norm)
-        self.dynamics = GravityDyns()
+        self.dynamics = GravityDyns(dt)
         self.inst_func = InstFn(hidden_dim=512, n_hidden=3, layer_norm=layer_norm)
+        self.seq_len = seq_len
 
     # Get Collision times first, then intergrate over ts.
     def get_collision_times(self, state):
@@ -67,7 +72,7 @@ class DynsSolver(nn.Module):
         event_states = []
         t = torch.tensor([0.], dtype=torch.float64, requires_grad=True).cuda()
 
-        while t < 25. * self.dt:
+        while t < float(self.seq_len):
             # Use rk4 instead dopri5
             # if not found an event, Set endpoint to 25.
             try:
@@ -76,11 +81,11 @@ class DynsSolver(nn.Module):
                                             odeint_interface=odeint_adjoint, method='dopri5')
                 except AssertionError:
                     t, state = odeint_event(self.dynamics, state, t, event_fn=self.event_fn, reverse_time=False,
-                                            odeint_interface=odeint_adjoint, method='rk4', options={'step_size': 0.001})
+                                            odeint_interface=odeint_adjoint, method='rk4', options={'step_size': 0.01})
                 act = self.event_fn.mlp(state[-1, :4])
                 state = self.inst_func(t, state[-1, :], act)
             except RuntimeError:
-                t = 25. * self.dt
+                t = float(self.seq_len)
                 state = state.unsqueeze(0)
 
             event_times.append(t)
@@ -97,10 +102,10 @@ class DynsSolver(nn.Module):
         total_results = []
         for i in range(num_interval):
             # integer between (last_t ~ event_times[i])
-            start = int(last_t / self.dt)+1
-            end = min(25, int(event_times[i] / self.dt)+1)
-            sample_ts = [float(last_t) / self.dt] + [float(t) for t in range(start, end)]
-            sample_ts = torch.tensor(sample_ts, requires_grad=True).cuda() * self.dt
+            start = int(last_t)+1
+            end = min(self.seq_len, int(event_times[i])+1)
+            sample_ts = [float(last_t)] + [float(t) for t in range(start, end)]
+            sample_ts = torch.tensor(sample_ts, requires_grad=True).cuda()
             total_ts.append(sample_ts[1:].clone().detach())
             if i == 0:
                 y0 = state
@@ -111,7 +116,7 @@ class DynsSolver(nn.Module):
                 results = odeint_adjoint(self.dynamics, y0, sample_ts, method='dopri5')[1:]
             except AssertionError:
                 results = odeint_adjoint(self.dynamics, y0, sample_ts,
-                                         method='rk4', options={'step_size': 0.001})[1:]
+                                         method='rk4', options={'step_size': 0.01})[1:]
             total_results += results
 
             last_t = event_times[i]
@@ -120,16 +125,16 @@ class DynsSolver(nn.Module):
 
 
 class GravityDyns(nn.Module):
-    def __init__(self, hidden_dim=256):
+    def __init__(self, dt, gravity=9.8, hidden_dim=256):
         super().__init__()
-        self.gravity = 9.8
+        gravity = gravity * dt * dt
+        self.gravity = torch.tensor([0., gravity, 0., gravity], requires_grad=True).cuda()
 
     def forward(self, t, state):
-        dx = state[:4]
+        dx = state[4:]
 
         # dv --> constant for event ODE, MLP for NODE.
-        dv = torch.tensor([0, self.gravity, 0, self.gravity], requires_grad=True).cuda()
-        return torch.cat([dx, dv], dim=-1)
+        return torch.cat([dx, self.gravity], dim=-1)
 
 class EventFn(nn.Module): # positions --> scalar
     def __init__(self, hidden_dim, layer_norm=False):
@@ -184,7 +189,7 @@ class InstFn(nn.Module): # state + activation --> state
 
 def train(args):
     writer = SummaryWriter(os.path.join('logs', args.name))
-    trainset = BouncingBall('train.npy')
+    trainset = BouncingBall('train.npy', args.seq_len, not args.no_subseq)
     valset = BouncingBall('val.npy')
     testset = BouncingBall('test.npy')
 
@@ -193,7 +198,7 @@ def train(args):
     # val_loader = DataLoader(valset, shuffle=False)
     # test_loader = DataLoader(testset, shuffle=False)
 
-    model = DynsSolver(layer_norm=args.layer_norm)
+    model = DynsSolver(dt=args.dt, seq_len=args.seq_len, layer_norm=args.layer_norm, )
     model = model.cuda()
 
     # Param_group
@@ -217,7 +222,7 @@ def train(args):
             pred_t, pred_state = model(input_state)
             pred_pos = pred_state[:, :4]
             # for stability
-            # pred_pos = torch.clamp(pred_pos, min=0, max=5)
+            pred_pos = torch.clamp(pred_pos, min=0, max=5)
 
             # MSE Loss
             loss = F.mse_loss(pred_pos, target_pos)
@@ -245,7 +250,11 @@ if __name__ == '__main__':
     parser.add_argument("--name", default='default')
     parser.add_argument("--event_lr", default=0.0005, type=float)
     parser.add_argument("--inst_lr", default=0.0001, type=float)
+    parser.add_argument("--dt", default=1./30., type=float)
     parser.add_argument("--clip_grad", default=5.0, type=float)
+    parser.add_argument("--seq_len", default=25, type=int)
+    parser.add_argument("--no_subseq", action='store_true')
+
     parser.add_argument("--layer_norm", action='store_true')
     args = parser.parse_args()
     train(args)
