@@ -6,3 +6,6 @@
 .vscode
 build
 dist
+/examples/bouncing_ball/test.npy
+/examples/bouncing_ball/train.npy
+/examples/bouncing_ball/val.npy

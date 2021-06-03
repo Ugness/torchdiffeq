@@ -53,6 +53,7 @@ class BouncingBallExample(nn.Module):
 
         for i in range(nbounces):
             event_t, solution = odeint_event(self, state, t0, event_fn=self.event_fn, reverse_time=False, atol=1e-8, rtol=1e-8, odeint_interface=self.odeint)
+
             event_times.append(event_t)
 
             state = self.state_update(tuple(s[-1] for s in solution))
