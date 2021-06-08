@@ -239,7 +239,7 @@ def train(args):
 
             writer.add_scalar('loss', loss.item(), epoch * len(trainset) + i)
             epoch_loss += loss.item()
-        writer.add_scalar('epoch_loss', epoch_loss / len(trainset))
+        writer.add_scalar('epoch_loss', epoch_loss / len(trainset), epoch)
         torch.save(model.state_dict(), os.path.join('checkpoints', args.name, f'{epoch}.pth'))
 
 '''
