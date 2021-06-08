@@ -65,6 +65,7 @@ class DynsSolver(nn.Module):
         self.dynamics = GravityDyns(dt)
         self.inst_func = InstFn(hidden_dim=512, n_hidden=3, layer_norm=layer_norm)
         self.seq_len = seq_len
+        self.nfe = 0
 
     # Get Collision times first, then intergrate over ts.
     def get_collision_times(self, state):
@@ -78,7 +79,7 @@ class DynsSolver(nn.Module):
             try:
                 try:
                     t, state = odeint_event(self.dynamics, state, t, event_fn=self.event_fn, reverse_time=False,
-                                            odeint_interface=odeint_adjoint, method='dopri5')
+                                            atol=1e-8, rtol=1e-8, odeint_interface=odeint_adjoint, method='dopri5')
                 except AssertionError:
                     t, state = odeint_event(self.dynamics, state, t, event_fn=self.event_fn, reverse_time=False,
                                             odeint_interface=odeint_adjoint, method='rk4', options={'step_size': 0.01})
@@ -129,6 +130,7 @@ class GravityDyns(nn.Module):
         super().__init__()
         gravity = gravity * dt * dt
         self.gravity = torch.tensor([0., gravity, 0., gravity], requires_grad=True).cuda()
+        self.nfe = 0
 
     def forward(self, t, state):
         dx = state[4:]
@@ -237,8 +239,8 @@ def train(args):
 
             writer.add_scalar('loss', loss.item(), epoch * len(trainset) + i)
             epoch_loss += loss.item()
+        writer.add_scalar('epoch_loss', epoch_loss / len(trainset))
         torch.save(model.state_dict(), os.path.join('checkpoints', args.name, f'{epoch}.pth'))
-        writer.add_scalar('epoch_loss', epoch_loss/len(trainset))
 
 '''
 TODO:

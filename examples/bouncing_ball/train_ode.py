@@ -62,7 +62,7 @@ class DynsSolver(nn.Module):
     def __init__(self, dt=1./30., seq_len=25, layer_norm=False, adjoint=True):
         super().__init__()
         # self.event_fn = EventFn(hidden_dim=128, layer_norm=layer_norm)
-        self.dynamics = GravityDyns(dt)
+        self.dynamics = GravityDyns(dt, layer_norm=layer_norm)
         # self.inst_func = InstFn(hidden_dim=512, n_hidden=3, layer_norm=layer_norm)
         self.seq_len = seq_len
 
@@ -81,16 +81,40 @@ class DynsSolver(nn.Module):
 
 
 class GravityDyns(nn.Module):
-    def __init__(self, dt, gravity=9.8, hidden_dim=256):
+    def __init__(self, dt, gravity=9.8, hidden_dim=256, layer_norm=False):
         super().__init__()
         gravity = gravity * dt * dt
         self.gravity = torch.tensor([0., gravity, 0., gravity], requires_grad=True).cuda()
+        if layer_norm:
+            self.mlp = nn.Sequential(
+                nn.Linear(8, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, 4)
+            )
+        else:
+            self.mlp = nn.Sequential(
+                nn.Linear(8, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, 4)
+            )
 
     def forward(self, t, state):
         dx = state[4:]
+        dv = self.mlp(state)
 
         # dv --> constant for event ODE, MLP for NODE.
-        return torch.cat([dx, self.gravity], dim=-1)
+        return torch.cat([dx, dv], dim=-1)
 
 
 def train(args):
@@ -109,7 +133,7 @@ def train(args):
 
     # Param_group
     params = [
-        {'params': model.parameters(), 'lr': args.event_lr},
+        {'params': model.parameters(), 'lr': args.lr},
         ]
     optimizer = optim.Adam(params)
 
@@ -142,8 +166,8 @@ def train(args):
 
             writer.add_scalar('loss', loss.item(), epoch * len(trainset) + i)
             epoch_loss += loss.item()
-        torch.save(model.state_dict(), os.path.join('checkpoints', 'orig_ode', args.name, f'{epoch}.pth'))
-        writer.add_scalar('epoch_loss', epoch_loss/len(trainset))
+        writer.add_scalar('epoch_loss', epoch_loss / len(trainset))
+        torch.save(model.state_dict(), os.path.join('checkpoints', args.name, f'{epoch}.pth'))
 
 '''
 TODO:
@@ -153,10 +177,9 @@ TODO:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", default='default')
-    parser.add_argument("--event_lr", default=0.0005, type=float)
-    parser.add_argument("--inst_lr", default=0.0001, type=float)
-    parser.add_argument("--dt", default=1./30., type=float)
+    parser.add_argument("--lr", default=0.0001, type=float)
     parser.add_argument("--clip_grad", default=5.0, type=float)
+    parser.add_argument("--dt", default=1./30., type=float)
     parser.add_argument("--seq_len", default=25, type=int)
     parser.add_argument("--no_subseq", action='store_true')
 
