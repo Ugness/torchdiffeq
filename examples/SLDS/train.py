@@ -113,7 +113,7 @@ class DynsSolver(nn.Module):
             sample_ts = [float(t) for t in range(start, end)]
             if len(sample_ts) != 0:
                 sample_ts = torch.tensor(sample_ts, requires_grad=True).cuda()
-                sample_ts = torch.cat([last_t, sample_ts], dim=0)
+                sample_ts = torch.cat([last_t.view(-1), sample_ts], dim=0)
                 total_ts.append(sample_ts[1:].clone().detach())
                 if i == 0:
                     y0 = state
