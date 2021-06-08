@@ -72,11 +72,13 @@ class DynsSolver(nn.Module):
         sample_ts = torch.tensor(sample_ts, requires_grad=True).cuda()
         y0 = state
 
-        try:
-            results = odeint_adjoint(self.dynamics, y0, sample_ts, method='dopri5')[1:]
-        except AssertionError:
-            results = odeint_adjoint(self.dynamics, y0, sample_ts,
-                                     method='rk4', options={'step_size': 0.01})[1:]
+        results = odeint(self.dynamics, y0, sample_ts,
+                                 method='rk4', options={'step_size': 0.1})[1:]
+        # try:
+        #     results = odeint(self.dynamics, y0, sample_ts, method='dopri5')[1:]
+        # except AssertionError:
+        #     results = odeint(self.dynamics, y0, sample_ts,
+        #                              method='rk4', options={'step_size': 0.1})[1:]
         return None, results
 
 
@@ -151,7 +153,7 @@ def train(args):
             pred_t, pred_state = model(input_state)
             pred_pos = pred_state[:, :4]
             # for stability
-            pred_pos = torch.clamp(pred_pos, min=0, max=5)
+            # pred_pos = torch.clamp(pred_pos, min=0, max=5)
 
             # MSE Loss
             loss = F.mse_loss(pred_pos, target_pos)

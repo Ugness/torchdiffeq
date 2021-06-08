@@ -224,7 +224,7 @@ def train(args):
             pred_t, pred_state = model(input_state)
             pred_pos = pred_state[:, :4]
             # for stability
-            pred_pos = torch.clamp(pred_pos, min=0, max=5)
+            # pred_pos = torch.clamp(pred_pos, min=0, max=5)
 
             # MSE Loss
             loss = F.mse_loss(pred_pos, target_pos)
