@@ -47,7 +47,7 @@ class BouncingBall(Dataset):
         velocity = np.concatenate([np.zeros([1, 4]), velocity], 0)
 
         if self.subseq:
-            start = random.randint(0, 74)
+            start = random.randrange(0, 100-self.seq_len)
         else:
             start = 0
         end = start+self.seq_len
@@ -59,12 +59,13 @@ class BouncingBall(Dataset):
 
 class DynsSolver(nn.Module):
 
-    def __init__(self, dt=1./30., seq_len=25, layer_norm=False, adjoint=True):
+    def __init__(self, dt=1./30., seq_len=25, layer_norm=False, adjoint=True, init_weight=False):
         super().__init__()
-        self.event_fn = EventFn(hidden_dim=128, layer_norm=layer_norm)
+        self.event_fn = EventFn(hidden_dim=128, layer_norm=layer_norm, init_weight=init_weight)
         self.dynamics = GravityDyns(dt)
         self.inst_func = InstFn(hidden_dim=512, n_hidden=3, layer_norm=layer_norm)
         self.seq_len = seq_len
+        self.ode = odeint_adjoint if adjoint else odeint
         self.nfe = 0
 
     # Get Collision times first, then intergrate over ts.
@@ -79,10 +80,10 @@ class DynsSolver(nn.Module):
             try:
                 try:
                     t, state = odeint_event(self.dynamics, state, t, event_fn=self.event_fn, reverse_time=False,
-                                            atol=1e-8, rtol=1e-8, odeint_interface=odeint_adjoint, method='dopri5')
+                                            atol=1e-8, rtol=1e-8, odeint_interface=self.ode, method='dopri5')
                 except AssertionError:
                     t, state = odeint_event(self.dynamics, state, t, event_fn=self.event_fn, reverse_time=False,
-                                            odeint_interface=odeint_adjoint, method='rk4', options={'step_size': 0.01})
+                                            odeint_interface=self.ode, method='rk4', options={'step_size': 0.01})
                 act = self.event_fn.mlp(state[-1, :4])
                 state = self.inst_func(t, state[-1, :], act)
             except RuntimeError:
@@ -116,9 +117,9 @@ class DynsSolver(nn.Module):
                     y0 = event_states[i]
 
                 try:
-                    results = odeint_adjoint(self.dynamics, y0, sample_ts, method='dopri5')[1:]
+                    results = self.ode(self.dynamics, y0, sample_ts, method='dopri5')[1:]
                 except AssertionError:
-                    results = odeint_adjoint(self.dynamics, y0, sample_ts,
+                    results = self.ode(self.dynamics, y0, sample_ts,
                                              method='rk4', options={'step_size': 0.01})[1:]
                 total_results += results
             last_t = event_times[i]
@@ -140,7 +141,7 @@ class GravityDyns(nn.Module):
         return torch.cat([dx, self.gravity], dim=-1)
 
 class EventFn(nn.Module): # positions --> scalar
-    def __init__(self, hidden_dim, layer_norm=False):
+    def __init__(self, hidden_dim, layer_norm=False, init_weight=False):
         super().__init__()
         # gets t, state(x y x y v v v v)
         if layer_norm:
@@ -161,11 +162,22 @@ class EventFn(nn.Module): # positions --> scalar
                 nn.ReLU(),
                 nn.Linear(hidden_dim, 8)
             )
+        if init_weight:
+            self.apply(self.weight_init)
 
     def forward(self, t, state):
         input = state[:4] # The event function took as input the positions of the two balls.
         output = torch.tanh(self.mlp(input))
         return torch.prod(output, dim=-1)
+
+    def weight_init(self, m):
+        # torch.nn.init.normal_(m.weight, 0, std=1.)
+        if isinstance(m, nn.Linear):
+            torch.nn.init.normal_(m.weight, 0, 1)
+            torch.nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            torch.nn.init.constant_(m.weight, 1)
+            torch.nn.init.constant_(m.bias, 0)
 
 class InstFn(nn.Module): # state + activation --> state
     def __init__(self, hidden_dim=512, n_hidden=3, layer_norm=False):
@@ -190,6 +202,16 @@ class InstFn(nn.Module): # state + activation --> state
         output = torch.tanh(output)
         return output
 
+def get_grad(m):
+    total_norm = 0.
+    for p in m.parameters():
+        try:
+            p_norm = p.grad.data.norm(2)
+            total_norm += p_norm.item() ** 2
+        except AttributeError:
+            pass
+    return total_norm ** 0.5
+
 def train(args):
     writer = SummaryWriter(os.path.join('logs', args.name))
     trainset = BouncingBall('train.npy', args.seq_len, not args.no_subseq)
@@ -201,7 +223,8 @@ def train(args):
     # val_loader = DataLoader(valset, shuffle=False)
     # test_loader = DataLoader(testset, shuffle=False)
 
-    model = DynsSolver(dt=args.dt, seq_len=args.seq_len, layer_norm=args.layer_norm, )
+    model = DynsSolver(dt=args.dt, seq_len=args.seq_len, layer_norm=args.layer_norm, adjoint=not args.no_adjoint,
+                       init_weight=args.init_weight)
     model = model.cuda()
 
     # Param_group
@@ -212,7 +235,7 @@ def train(args):
     optimizer = optim.Adam(params)
 
     os.makedirs(os.path.join('checkpoints', args.name), exist_ok=True)
-    for epoch in range(100):
+    for epoch in range(args.max_epochs):
         epoch_loss = 0
         for i, batch in tqdm(enumerate(train_loader), total=1000):
             # squeeze unnecessary batch dimension
@@ -225,7 +248,7 @@ def train(args):
             pred_t, pred_state = model(input_state)
             pred_pos = pred_state[:, :4]
             # for stability
-            # pred_pos = torch.clamp(pred_pos, min=0, max=5)
+            pred_pos = torch.clamp(pred_pos, min=0, max=5)
 
             # MSE Loss
             loss = F.mse_loss(pred_pos, target_pos)
@@ -239,6 +262,8 @@ def train(args):
                 pass
 
             writer.add_scalar('loss', loss.item(), epoch * len(trainset) + i)
+            writer.add_scalar('event_grad', get_grad(model.event_fn), epoch * len(trainset) + i)
+            writer.add_scalar('inst_grad', get_grad(model.inst_func), epoch * len(trainset) + i)
             epoch_loss += loss.item()
         writer.add_scalar('epoch_loss', epoch_loss / len(trainset), epoch)
         torch.save(model.state_dict(), os.path.join('checkpoints', args.name, f'{epoch}.pth'))
@@ -257,6 +282,9 @@ if __name__ == '__main__':
     parser.add_argument("--clip_grad", default=5.0, type=float)
     parser.add_argument("--seq_len", default=25, type=int)
     parser.add_argument("--no_subseq", action='store_true')
+    parser.add_argument("--no_adjoint", action='store_true')
+    parser.add_argument("--init_weight", action='store_true')
+    parser.add_argument("--max_epochs", default=1000, type=int)
 
     parser.add_argument("--layer_norm", action='store_true')
     args = parser.parse_args()

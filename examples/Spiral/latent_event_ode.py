@@ -4,6 +4,7 @@ import logging
 import time
 import numpy as np
 import numpy.random as npr
+npr.seed(1234)
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
