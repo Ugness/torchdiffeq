@@ -91,7 +91,7 @@ class DynsSolver(nn.Module):
                                             odeint_interface=odeint, method='rk4', options={'step_size': 0.01})
                 state = self.inst_func(t, state[-1, :])
             except RuntimeError:
-                t = float(self.seq_len)
+                t = torch.tensor([float(self.seq_len)], requires_grad=True)
                 state = state.unsqueeze(0)
 
             event_times.append(t)
@@ -110,21 +110,22 @@ class DynsSolver(nn.Module):
             # integer between (last_t ~ event_times[i])
             start = int(last_t)+1
             end = min(self.seq_len, int(event_times[i])+1)
-            sample_ts = [float(last_t)] + [float(t) for t in range(start, end)]
-            sample_ts = torch.tensor(sample_ts, requires_grad=True).cuda()
-            total_ts.append(sample_ts[1:].clone().detach())
-            if i == 0:
-                y0 = state
-            else:
-                y0 = event_states[i]
+            sample_ts = [float(t) for t in range(start, end)]
+            if len(sample_ts) != 0:
+                sample_ts = torch.tensor(sample_ts, requires_grad=True).cuda()
+                sample_ts = torch.cat([last_t, sample_ts], dim=0)
+                total_ts.append(sample_ts[1:].clone().detach())
+                if i == 0:
+                    y0 = state
+                else:
+                    y0 = event_states[i]
 
-            try:
-                results = odeint(self.dynamics, y0, sample_ts, method='dopri5')[1:]
-            except AssertionError:
-                results = odeint(self.dynamics, y0, sample_ts,
-                                         method='rk4', options={'step_size': 0.01})[1:]
-            # only collect positions.
-            total_results += results[0]
+                try:
+                    results = odeint_adjoint(self.dynamics, y0, sample_ts, method='dopri5')[1:]
+                except AssertionError:
+                    results = odeint_adjoint(self.dynamics, y0, sample_ts,
+                                             method='rk4', options={'step_size': 0.01})[1:]
+                total_results += results[0]
 
             last_t = event_times[i]
 
