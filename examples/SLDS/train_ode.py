@@ -94,31 +94,15 @@ class DynsSolver(nn.Module):
         return event_times, event_states
 
     def forward(self, state):
-        event_times, event_states = self.get_collision_times(state)
-        num_interval = len(event_times)
+        # event_times, event_states = self.get_collision_times(state)
 
-        last_t = torch.tensor([0.]).cuda()
-        total_ts = []
-        total_results = []
-        for i in range(num_interval):
-            # integer between (last_t ~ event_times[i])
-            t_idx = (self.ts <= event_times[i]) & (self.ts > last_t)
-            if sum(t_idx) > 0:
-                sample_ts = torch.cat([last_t, self.ts[t_idx]], dim=0)
-                total_ts.append(sample_ts[1:].clone().detach())
-                if i == 0:
-                    y0 = state
-                else:
-                    y0 = event_states[i]
+        y0 = state
+        sample_ts = self.ts
+        results = odeint(self.dynamics, y0, sample_ts,
+                                    method='rk4', options={'step_size': 0.01})
+        pos = results[0][1:]
 
-                results = odeint(self.dynamics, y0, sample_ts,
-                                            method='rk4', options={'step_size': 0.01})
-                pos = results[0][1:]
-                total_results += pos
-
-            last_t = event_times[i]
-
-        return torch.cat(total_ts), torch.stack(total_results)
+        return None, pos.view(-1, 1, 2)
 
 
 class Dyns(nn.Module):
@@ -126,12 +110,15 @@ class Dyns(nn.Module):
         super().__init__()
         # Define 3 cases of dynamics (Eq. 18.)
         # [W(2x2), b(1x2)]
-        dyn1 = torch.tensor([[0, 1], [-1, 0], [0, 2]], dtype=torch.float64).cuda()
-        dyn2 = torch.tensor([[0, 0], [0, 0], [-1, -1]], dtype=torch.float64).cuda()
-        dyn3 = torch.tensor([[0, 0], [0, 0], [1, -1]], dtype=torch.float64).cuda()
-
-        # 3x(2+1)x2
-        self.dyn = torch.stack([dyn1, dyn2, dyn3], dim=0).cuda()
+        self.mlp = nn.Sequential(
+            nn.Linear(2, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 2),
+        )
 
         self.nfe = 0
 
@@ -140,13 +127,7 @@ class Dyns(nn.Module):
         x = state[0]
         w = state[1]
         # Following Eq. in Sec. 4.1. (weighted form of Switching Dynamics)
-        dyn = (w.view(-1, 1, 1) * self.dyn).sum(0)
-        weight = dyn[:2]
-        bias = dyn[2].unsqueeze(0)
-
-        # addmm(bias, m1, m2) = bias + m1 @ m2.
-        # @: matrix multiplication
-        dx = torch.addmm(bias, x, weight)
+        dx = self.mlp(x)
         return dx, torch.zeros([3], requires_grad=True).cuda()
 
 class EventFn(nn.Module): # positions --> scalar
@@ -218,7 +199,7 @@ def loss_func(pred_seq, target_seq, coeff=0.01):
     return position_loss + coeff * velocity_loss
 
 def train(args):
-    writer = SummaryWriter(os.path.join('logs', args.name))
+    writer = SummaryWriter(os.path.join('logs/orig_ode', args.name))
     trainset = SLDS('train.npy')
 
     train_loader = DataLoader(trainset, shuffle=True, num_workers=16)
@@ -228,12 +209,11 @@ def train(args):
 
     # Param_group
     params = [
-        {'params': model.event_fn.parameters(), 'lr': args.event_lr},
-        {'params': model.inst_func.parameters(), 'lr': args.inst_lr}
+        {'params': model.parameters(), 'lr': args.lr},
         ]
     optimizer = optim.Adam(params)
 
-    os.makedirs(os.path.join('checkpoints', args.name), exist_ok=True)
+    os.makedirs(os.path.join('checkpoints/orig_ode', args.name), exist_ok=True)
     for epoch in range(args.max_epochs):
         epoch_loss = 0
         for i, (pos, w) in tqdm(enumerate(train_loader), total=100):
@@ -264,21 +244,19 @@ def train(args):
             writer.add_scalar('inst_grad', get_grad(model.inst_func), epoch * len(trainset) + i)
             epoch_loss += loss.item()
         writer.add_scalar('epoch_loss', epoch_loss / len(trainset), epoch)
-        torch.save(model.state_dict(), os.path.join('checkpoints', args.name, f'{epoch}.pth'))
+        torch.save(model.state_dict(), os.path.join('checkpoints/orig_ode', args.name, f'{epoch}.pth'))
 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", default='default')
-    parser.add_argument("--event_lr", default=0.001, type=float)
-    parser.add_argument("--inst_lr", default=0.001, type=float)
+    parser.add_argument("--lr", default=0.001, type=float)
     parser.add_argument("--dt", default=1./30., type=float)
     parser.add_argument("--clip_grad", default=5.0, type=float)
     parser.add_argument("--seq_len", default=25, type=int)
     parser.add_argument("--no_subseq", action='store_true')
     parser.add_argument("--max_epochs", default=1000, type=int)
-
     parser.add_argument("--layer_norm", action='store_true')
     args = parser.parse_args()
     train(args)
