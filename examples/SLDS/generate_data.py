@@ -72,29 +72,29 @@ if __name__ == '__main__':
             # MAKE TRAIN
             r = torch.rand([1])*0.5 + 2.5 # 2.5 ~ 3.5
             theta = torch.randn([1]) * 3.141592
-            y0 = torch.tensor([r*torch.cos(theta), r*torch.sin(theta)]).to(device).unsqueeze(0)
+            y0 = torch.tensor([2 + r*torch.cos(theta), r*torch.sin(theta)]).to(device).unsqueeze(0)
             y = odeint(dyn, y0, train_t, method='rk4', options={'step_size': 0.01}).squeeze()
             trainset.append(y)
         trainset = torch.stack(trainset).cpu().numpy()
         print(trainset.shape)
-        np.save('train.npy', trainset)
+        np.save('train_new.npy', trainset)
         for _ in tqdm(range(25)):
             # MAKE VAL
             r = torch.rand([1]) + 0.5  # 0.5 ~ 1.5
             theta = torch.randn([1]) * 3.141592
-            y0 = torch.tensor([r * torch.cos(theta), r * torch.sin(theta)]).to(device).unsqueeze(0)
+            y0 = torch.tensor([2 + r * torch.cos(theta), r * torch.sin(theta)]).to(device).unsqueeze(0)
             y = odeint(dyn, y0, test_val_t, method='rk4', options={'step_size': 0.01}).squeeze()
             valset.append(y)
         valset = torch.stack(valset).cpu().numpy()
         print(valset.shape)
-        np.save('val.npy', valset)
+        np.save('val_new.npy', valset)
         for _ in tqdm(range(25)):
             # MAKE TEST
             r = torch.rand([1]) + 0.5  # 0.5 ~ 1.5
             theta = torch.randn([1]) * 3.141592
-            y0 = torch.tensor([r * torch.cos(theta), r * torch.sin(theta)]).to(device).unsqueeze(0)
+            y0 = torch.tensor([2 + r * torch.cos(theta), r * torch.sin(theta)]).to(device).unsqueeze(0)
             y = odeint(dyn, y0, test_val_t, method='rk4', options={'step_size': 0.01}).squeeze()
             testset.append(y)
         testset = torch.stack(testset).cpu().numpy()
         print(testset.shape)
-        np.save('test.npy', testset)
+        np.save('test_new.npy', testset)

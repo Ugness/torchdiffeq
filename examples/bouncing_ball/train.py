@@ -18,7 +18,6 @@ from torchdiffeq import odeint_event
 from tqdm import tqdm
 
 import random
-random.seed(1234, version=2)
 
 torch.set_default_dtype(torch.float64)
 
@@ -162,8 +161,7 @@ class EventFn(nn.Module): # positions --> scalar
                 nn.ReLU(),
                 nn.Linear(hidden_dim, 8)
             )
-        if init_weight:
-            self.apply(self.weight_init)
+        self.apply(self.weight_init)
 
     def forward(self, t, state):
         input = state[:4] # The event function took as input the positions of the two balls.
@@ -268,10 +266,6 @@ def train(args):
         writer.add_scalar('epoch_loss', epoch_loss / len(trainset), epoch)
         torch.save(model.state_dict(), os.path.join('checkpoints', args.name, f'{epoch}.pth'))
 
-'''
-TODO:
-- tensorboard logging.
-'''
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -284,7 +278,7 @@ if __name__ == '__main__':
     parser.add_argument("--no_subseq", action='store_true')
     parser.add_argument("--no_adjoint", action='store_true')
     parser.add_argument("--init_weight", action='store_true')
-    parser.add_argument("--max_epochs", default=1000, type=int)
+    parser.add_argument("--max_epochs", default=100, type=int)
 
     parser.add_argument("--layer_norm", action='store_true')
     args = parser.parse_args()

@@ -59,7 +59,7 @@ class BouncingBall(Dataset):
 
 class DynsSolver(nn.Module):
 
-    def __init__(self, dt=1./30., seq_len=25, layer_norm=False, adjoint=True):
+    def __init__(self, dt=1./30., seq_len=25, layer_norm=False, adjoint=True, init_weight=False):
         super().__init__()
         # self.event_fn = EventFn(hidden_dim=128, layer_norm=layer_norm)
         self.dynamics = GravityDyns(dt, layer_norm=layer_norm)
@@ -169,7 +169,7 @@ def train(args):
             writer.add_scalar('loss', loss.item(), epoch * len(trainset) + i)
             epoch_loss += loss.item()
         writer.add_scalar('epoch_loss', epoch_loss / len(trainset), epoch)
-        torch.save(model.state_dict(), os.path.join('checkpoints', args.name, f'{epoch}.pth'))
+        torch.save(model.state_dict(), os.path.join('checkpoints', 'orig_ode', args.name, f'{epoch}.pth'))
 
 '''
 TODO:
