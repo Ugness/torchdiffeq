@@ -30,7 +30,7 @@ net_dict = {
 }
 load_dict = {
     'ode':'checkpoints/orig_ode/default',
-    'event_ode':'checkpoints/default',
+    'event_ode':'checkpoints/noise_add',
     'fusion_net':'checkpoints/ode_fusion/default',
 }
 
@@ -57,7 +57,7 @@ def test(args):
     ckpt = torch.load(ckpt_dir)
     model.load_state_dict(ckpt)
 
-    testset = SLDS('test.npy')
+    testset = SLDS('test.npy', train=False)
 
     # batchsize == 1
     test_loader = DataLoader(testset, shuffle=False)
@@ -77,8 +77,8 @@ def test(args):
             target_pos = x[1:].double()
 
             pred_t, pred_pos = model(input_state)
-            targets.append(target_pos)
-            preds.append(pred_pos)
+            targets.append(target_pos.cpu().numpy())
+            preds.append(pred_pos.cpu().numpy())
             # MSE Loss
             loss = F.mse_loss(pred_pos, target_pos)
 
@@ -101,14 +101,26 @@ def vis(args, targets, preds, n_sample=3):
     os.makedirs(fig_dir, exist_ok=True)
 
     fig, ax = plt.subplots(figsize=(15, 15))
+    ax.set_xlim([-6, 6])
+    ax.set_ylim([-6, 6])
     for i in range(len(preds)):
-        ax.plot(preds[i][:, 0], preds[i][:, 1], color='b')
+        ax.plot(preds[i][:, 0, 0], preds[i][:, 0, 1], color='b')
     fig.savefig(os.path.join(fig_dir, f'pred.png'))
 
     fig, ax = plt.subplots(figsize=(15, 15))
+    ax.set_xlim([-6, 6])
+    ax.set_ylim([-6, 6])
     for i in range(len(preds)):
-        ax.plot(targets[i][:, 0], targets[i][:, 1], color='b')
+        ax.plot(targets[i][:, 0, 0], targets[i][:, 0, 1], color='b')
     fig.savefig(os.path.join(fig_dir, f'target.png'))
+
+    fig, ax = plt.subplots(figsize=(15, 15))
+    ax.set_xlim([-6, 6])
+    ax.set_ylim([-6, 6])
+    for i in range(len(preds)):
+        ax.plot(preds[i][:, 0, 0], preds[i][:, 0, 1], color='b')
+        ax.plot(targets[i][:, 0, 0], targets[i][:, 0, 1], color='r')
+    fig.savefig(os.path.join(fig_dir, f'compare.png'))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
