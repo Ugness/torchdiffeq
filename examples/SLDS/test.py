@@ -102,12 +102,12 @@ def vis(args, targets, preds, n_sample=3):
 
     fig, ax = plt.subplots(figsize=(15, 15))
     for i in range(len(preds)):
-        ax.plot(preds[:, 0], preds[:, 1], color='b')
+        ax.plot(preds[i][:, 0], preds[i][:, 1], color='b')
     fig.savefig(os.path.join(fig_dir, f'pred.png'))
 
     fig, ax = plt.subplots(figsize=(15, 15))
     for i in range(len(preds)):
-        ax.plot(targets[:, 0], targets[:, 1], color='b')
+        ax.plot(targets[i][:, 0], targets[i][:, 1], color='b')
     fig.savefig(os.path.join(fig_dir, f'target.png'))
 
 if __name__ == '__main__':
