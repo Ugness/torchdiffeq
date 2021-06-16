@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 
 net_dict = {
     'ode':ODENet,
-    # 'event_ode':EventODENet,
+    'event_ode':EventODENet,
     # 'fusion_net':ODEFusionNet
 }
 load_dict = {
