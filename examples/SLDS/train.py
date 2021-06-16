@@ -33,7 +33,7 @@ torch.set_default_dtype(torch.float64)
 
 class SLDS(Dataset):
 
-    def __init__(self, root='train.npy'):
+    def __init__(self, root='train.npy', train=True):
         super().__init__()
         self.data = np.expand_dims(np.load(root), 2)
 
@@ -51,6 +51,8 @@ class SLDS(Dataset):
         elif y[0, 0] < 2 and y[0, 1] < 0:
             i = 2
         w[i] = 1.
+        if train:
+            pos = pos + np.random.randn(*(pos.shape)) * 0.05
         return pos, w # --> [25, 8]
 
     def __len__(self):
@@ -174,7 +176,7 @@ class EventFn(nn.Module): # positions --> scalar
 
     def weight_init(self, m):
         if isinstance(m, nn.Linear):
-            torch.nn.init.normal_(m.weight, 0, 10)
+            torch.nn.init.normal_(m.weight, 0, 1)
             torch.nn.init.constant_(m.bias, 0)
 
 class InstFn(nn.Module):
@@ -219,7 +221,7 @@ def loss_func(pred_seq, target_seq, coeff=0.01):
 
 def train(args):
     writer = SummaryWriter(os.path.join('logs', args.name))
-    trainset = SLDS('train.npy')
+    trainset = SLDS('train.npy', train=args.train)
 
     train_loader = DataLoader(trainset, shuffle=True, num_workers=16)
 
@@ -278,6 +280,7 @@ if __name__ == '__main__':
     parser.add_argument("--seq_len", default=25, type=int)
     parser.add_argument("--no_subseq", action='store_true')
     parser.add_argument("--max_epochs", default=1000, type=int)
+    parser.add_argument("--train", action="store_true")
 
     parser.add_argument("--layer_norm", action='store_true')
     args = parser.parse_args()

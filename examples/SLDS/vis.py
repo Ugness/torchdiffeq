@@ -1,7 +1,8 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
-x = np.load('train_new.npy')
+x = np.load('train.npy')
 print(x.shape)
-plt.plot(x[0, :, 0],x[0, :, 1])
+plt.scatter(x[:, :, 0],x[:, :, 1])
+plt.savefig('data.png')
 plt.show()
