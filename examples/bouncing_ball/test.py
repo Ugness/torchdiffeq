@@ -98,8 +98,8 @@ def vis(args, targets, preds, n_sample=3):
     3. plot the target.
     '''
     if n_sample > 0:
-        targets = targets[:3]
-        preds = preds[:3]
+        targets = targets[:n_sample]
+        preds = preds[:n_sample]
 
     fig_dir = os.path.join(load_dict[args.net].replace('checkpoints', 'figures'))
     os.makedirs(fig_dir, exist_ok=True)

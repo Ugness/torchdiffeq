@@ -84,14 +84,28 @@ def test(args):
 
     return model, testset
 
-def vis(model, dataset):
+def vis(args, targets, preds, n_sample=3):
     '''
     1. Run model and Get x y x y.
     2. plot each balls with x y. (plt. 5x5 map, 0.5 rad ball. albedo~t)
     3. plot the target.
     '''
+    if n_sample > 0:
+        targets = targets[:n_sample]
+        preds = preds[:n_sample]
 
-    pass
+    fig_dir = os.path.join(load_dict[args.net].replace('checkpoints', 'figures'))
+    os.makedirs(fig_dir, exist_ok=True)
+
+    fig, ax = plt.subplots(fig_size=(15, 15))
+    for i in range(len(preds)):
+        ax.plot(preds[:, 0], preds[:, 1], color='b')
+    fig.savefig(os.path.join(fig_dir, f'pred.png'))
+
+    fig, ax = plt.subplots(fig_size=(15, 15))
+    for i in range(len(preds)):
+        ax.plot(targets[:, 0], targets[:, 1], color='b')
+    fig.savefig(os.path.join(fig_dir, f'target.png'))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
