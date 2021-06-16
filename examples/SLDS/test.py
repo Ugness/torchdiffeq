@@ -80,7 +80,7 @@ def test(args):
             targets.append(target_pos)
             preds.append(pred_pos)
             # MSE Loss
-            loss = loss_func(pred_pos, target_pos)
+            loss = F.mse_loss(pred_pos, target_pos)
 
             epoch_loss += loss.item()
         print(f"MSE Loss of Net {args.net}: {epoch_loss / len(testset)}")
