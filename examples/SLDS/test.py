@@ -53,7 +53,7 @@ def test(args):
     model = Solver(train=False, layer_norm=False, adjoint=False)
     model = model.cuda()
 
-    ckpt_dir = os.path.join(load_dict[args.net], '9.pth')
+    ckpt_dir = os.path.join(load_dict[args.net], '49.pth')
     ckpt = torch.load(ckpt_dir)
     model.load_state_dict(ckpt)
 
@@ -63,6 +63,8 @@ def test(args):
     test_loader = DataLoader(testset, shuffle=False)
 
     epoch_loss = 0.
+    targets = []
+    preds = []
     with torch.no_grad():
         for (pos, w) in test_loader:
             # squeeze unnecessary batch dimension
@@ -75,14 +77,15 @@ def test(args):
             target_pos = x[1:].double()
 
             pred_t, pred_pos = model(input_state)
-
+            targets.append(target_pos)
+            preds.append(pred_pos)
             # MSE Loss
             loss = loss_func(pred_pos, target_pos)
 
             epoch_loss += loss.item()
         print(f"MSE Loss of Net {args.net}: {epoch_loss / len(testset)}")
 
-    return model, testset
+    return targets, preds
 
 def vis(args, targets, preds, n_sample=3):
     '''
@@ -127,4 +130,4 @@ if __name__ == '__main__':
     for net_type in net_dict.keys():
         args.net = net_type
         model, dataset = test(args)
-        vis(model, dataset)
+        vis(args, targets, preds, n_sample=3)
