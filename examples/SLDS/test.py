@@ -129,5 +129,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
     for net_type in net_dict.keys():
         args.net = net_type
-        model, dataset = test(args)
+        targets, preds = test(args)
         vis(args, targets, preds, n_sample=3)
