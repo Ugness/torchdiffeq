@@ -100,12 +100,12 @@ def vis(args, targets, preds, n_sample=3):
     fig_dir = os.path.join(load_dict[args.net].replace('checkpoints', 'figures'))
     os.makedirs(fig_dir, exist_ok=True)
 
-    fig, ax = plt.subplots(fig_size=(15, 15))
+    fig, ax = plt.subplots(figsize=(15, 15))
     for i in range(len(preds)):
         ax.plot(preds[:, 0], preds[:, 1], color='b')
     fig.savefig(os.path.join(fig_dir, f'pred.png'))
 
-    fig, ax = plt.subplots(fig_size=(15, 15))
+    fig, ax = plt.subplots(figsize=(15, 15))
     for i in range(len(preds)):
         ax.plot(targets[:, 0], targets[:, 1], color='b')
     fig.savefig(os.path.join(fig_dir, f'target.png'))
